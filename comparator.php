@@ -14,7 +14,7 @@ $tdbTables = extractTables($tdb->conn);
 
 $diff1 = array_diff($sdbTables, $tdbTables);
 if ($diff1) {
-	pp("Tables that exist only in {$sdb->Name}");
+	pp("Creating tables that exist only in {$sdb->Name}");
 	foreach ($diff1 as $TableName) {
 		pp("\t$TableName created in {$tdb->Name}");
 		$statement = showCreateTable($sdb->conn, $TableName);
@@ -29,12 +29,29 @@ foreach ($sdbTables as $TableName) {
 	$tdbCreate = getTableStructure($tdb->conn, $TableName);
 	$diff = array_diff($sdbCreate, $tdbCreate);
 	if ($diff) {
-		pp("\t$TableName is different:");
+		pp("\t$TableName is different.");
 		foreach ($diff as $row) {
 			$colname = explode("`", $row)[1];
 			pp("\t\tAdding column $colname");
-			$query = substr("ALTER TABLE $TableName ADD COLUMN $row", 0, -1);
-			$tdb->conn->just_run($query);
+			$AlterStr = "ALTER TABLE $TableName";
+			$AlterStr .= " ADD COLUMN $row";
+			$AlterStr = substr($AlterStr, 0, -1) . ";";
+			try {
+				$tdb->conn->just_run($AlterStr);
+			} catch (Exception $e) {
+				if ($e->errorInfo[0] === "42S21") {
+					pp("\t\t$colname exists, but is different, trying to modify.");
+					$AlterStr = str_replace(" ADD COLUMN ", " MODIFY COLUMN ", $AlterStr);
+					try {
+						$tdb->conn->just_run($AlterStr);
+					} catch (Exception $e) {
+						pp($AlterStr);
+						pp($e);
+						die();
+					}
+				}
+			}
 		}
 	}
 }
+pp("Done.\n");
